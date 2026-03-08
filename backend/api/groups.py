@@ -4,6 +4,7 @@
 from flask import Blueprint, jsonify, request
 from utils.database import get_db
 from utils.key_manager import KeyManager
+from utils.auth import require_admin
 from pygroupsig import groupsig, constants
 import os
 
@@ -28,8 +29,9 @@ def list_groups():
     return jsonify({'groups': groups})
 
 @bp.route('', methods=['POST'])
+@require_admin
 def create_group():
-    """创建新群组"""
+    """创建新群组（仅管理员）"""
     try:
         data = request.get_json()
         group_name = data.get('name', '未命名群组')
@@ -64,6 +66,15 @@ def create_group():
             (key_paths['grpkey_path'], key_paths['mgrkey_path'],
              key_paths['gml_path'], group_id)
         )
+        
+        # 记录审计日志
+        user_id = request.headers.get('X-User-ID')
+        cursor.execute(
+            '''INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details)
+               VALUES (?, ?, ?, ?, ?)''',
+            (user_id, 'create_group', 'groups', group_id, f'创建群组: {group_name}')
+        )
+        
         conn.commit()
         conn.close()
         

@@ -9,8 +9,8 @@ import sys
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from api import groups, members, signatures
-from utils.database import init_db
+from api import groups, members, signatures, auth
+from utils.database import init_db, get_db
 from utils.key_manager import KeyManager
 
 app = Flask(__name__, 
@@ -28,9 +28,24 @@ init_db()
 key_manager = KeyManager()
 
 # 注册蓝图
+app.register_blueprint(auth.bp)
 app.register_blueprint(groups.bp)
 app.register_blueprint(members.bp)
 app.register_blueprint(signatures.bp)
+
+def log_audit(action, resource_type=None, resource_id=None, details=None):
+    """记录审计日志"""
+    user_id = request.headers.get('X-User-ID')
+    if user_id:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details)
+               VALUES (?, ?, ?, ?, ?)''',
+            (user_id, action, resource_type, resource_id, details)
+        )
+        conn.commit()
+        conn.close()
 
 @app.route('/')
 def index():

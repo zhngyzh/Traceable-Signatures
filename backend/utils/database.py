@@ -19,6 +19,18 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
+    # 用户表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password TEXT NOT NULL,
+            role TEXT DEFAULT 'user',
+            token TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
     # 群组表
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS groups (
@@ -35,11 +47,13 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS members (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
             group_id INTEGER NOT NULL,
             name TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             memkey_path TEXT,
-            FOREIGN KEY (group_id) REFERENCES groups(id)
+            FOREIGN KEY (group_id) REFERENCES groups(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
     ''')
     
@@ -57,6 +71,20 @@ def init_db():
             signer_index INTEGER,
             FOREIGN KEY (group_id) REFERENCES groups(id),
             FOREIGN KEY (member_id) REFERENCES members(id)
+        )
+    ''')
+    
+    # 操作日志表（用于审计）
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            action TEXT NOT NULL,
+            resource_type TEXT,
+            resource_id INTEGER,
+            details TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
     ''')
     

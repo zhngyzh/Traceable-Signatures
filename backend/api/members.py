@@ -4,6 +4,7 @@
 from flask import Blueprint, jsonify, request
 from utils.database import get_db
 from utils.key_manager import KeyManager
+from utils.auth import require_admin, require_auth
 from pygroupsig import groupsig, constants, memkey
 from base64 import b64encode
 
@@ -31,12 +32,14 @@ def list_members():
     return jsonify({'members': members})
 
 @bp.route('', methods=['POST'])
+@require_admin
 def add_member():
-    """添加新成员"""
+    """添加新成员（仅管理员）"""
     try:
         data = request.get_json()
         group_id = data.get('group_id')
         member_name = data.get('name', '未命名成员')
+        user_id = data.get('user_id')  # 可选，可以指定关联的用户
         
         if not group_id:
             return jsonify({
@@ -52,9 +55,9 @@ def add_member():
         cursor = conn.cursor()
         cursor.execute('SELECT grpkey_path, mgrkey_path, gml_path FROM groups WHERE id=?', (group_id,))
         group_row = cursor.fetchone()
-        conn.close()
         
         if not group_row:
+            conn.close()
             return jsonify({
                 'success': False,
                 'message': f'群组不存在 (ID: {group_id})'
@@ -101,11 +104,9 @@ def add_member():
         memkey_obj = memkey.memkey_import(constants.KTY04_CODE, mekeyb64)
         
         # 保存到数据库
-        conn = get_db()
-        cursor = conn.cursor()
         cursor.execute(
-            'INSERT INTO members (group_id, name) VALUES (?, ?)',
-            (group_id, member_name)
+            'INSERT INTO members (user_id, group_id, name) VALUES (?, ?, ?)',
+            (user_id, group_id, member_name)
         )
         member_id = cursor.lastrowid
         
@@ -119,6 +120,14 @@ def add_member():
         # 保存更新后的 GML
         key_manager.save_group_keys(group_id, grpkey_obj, mgrkey_obj, gml_obj)
         
+        # 记录审计日志
+        admin_id = request.headers.get('X-User-ID')
+        cursor.execute(
+            '''INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details)
+               VALUES (?, ?, ?, ?, ?)''',
+            (admin_id, 'add_member', 'members', member_id, f'为用户 {member_name} 分配密钥')
+        )
+        
         conn.commit()
         conn.close()
         
@@ -127,7 +136,7 @@ def add_member():
         
         return jsonify({
             'success': True,
-            'message': '成员添加成功',
+            'message': '成员添加成功，密钥已分发',
             'member_id': member_id,
             'name': member_name
         })
